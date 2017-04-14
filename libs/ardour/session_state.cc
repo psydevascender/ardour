@@ -1744,10 +1744,8 @@ Session::XMLRouteFactory (const XMLNode& node, int version)
 		boost::shared_ptr<Track> track;
 
                 if (type == DataType::AUDIO) {
-	                cerr << "Creating a new audio track\n";
                         track.reset (new AudioTrack (*this, X_("toBeResetFroXML")));
                 } else {
-	                cerr << "Creating a new MIDI track\n";
                         track.reset (new MidiTrack (*this, X_("toBeResetFroXML")));
                 }
 
@@ -1764,7 +1762,6 @@ Session::XMLRouteFactory (const XMLNode& node, int version)
 
 	} else {
 		PresentationInfo::Flag flags = PresentationInfo::get_flags (node);
-		cerr << "Creating a new bus\n";
 		boost::shared_ptr<Route> r (new Route (*this, X_("toBeResetFroXML"), flags));
 
                 if (r->init () == 0 && r->set_state (node, version) == 0) {
