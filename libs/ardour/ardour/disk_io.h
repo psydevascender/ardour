@@ -64,6 +64,7 @@ class LIBARDOUR_API DiskIOProcessor : public Processor
 	int set_block_size (pframes_t);
 	bool configure_io (ChanCount in, ChanCount out);
 	bool can_support_io_configuration (const ChanCount& in, ChanCount& out);
+	bool display_to_user () const { return false; }
 
 	/** @return A number between 0 and 1, where 0 indicates that the playback/capture buffer
 	 *  is dry (ie the disk subsystem could not keep up) and 1 indicates that the
