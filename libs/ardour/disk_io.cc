@@ -149,21 +149,28 @@ DiskIOProcessor::configure_io (ChanCount in, ChanCount out)
 {
 	DEBUG_TRACE (DEBUG::DiskIO, string_compose ("Configuring %1 for in:%2 out:%3\n", name(), in, out));
 
-	RCUWriter<ChannelList> writer (channels);
-	boost::shared_ptr<ChannelList> c = writer.get_copy();
+	{
+		RCUWriter<ChannelList> writer (channels);
+		boost::shared_ptr<ChannelList> c = writer.get_copy();
 
-	uint32_t n_audio = in.n_audio();
+		uint32_t n_audio = in.n_audio();
 
-	if (n_audio > c->size()) {
-		add_channel_to (c, n_audio - c->size());
-	} else if (n_audio < c->size()) {
-		remove_channel_from (c, c->size() - n_audio);
+		if (n_audio > c->size()) {
+			add_channel_to (c, n_audio - c->size());
+		} else if (n_audio < c->size()) {
+			remove_channel_from (c, c->size() - n_audio);
+		}
+
+		if (in.n_midi() > 0 && !_midi_buf) {
+			const size_t size = _session.butler()->midi_diskstream_buffer_size();
+			_midi_buf = new MidiRingBuffer<framepos_t>(size);
+			midi_interpolation.add_channel_to (0,0);
+		}
 	}
 
-	if (in.n_midi() > 0 && !_midi_buf) {
-		const size_t size = _session.butler()->midi_diskstream_buffer_size();
-		_midi_buf = new MidiRingBuffer<framepos_t>(size);
-		midi_interpolation.add_channel_to (0,0);
+	{
+		boost::shared_ptr<ChannelList> c = channels.reader();
+		DEBUG_TRACE (DEBUG::DiskIO, string_compose ("%1: now using %2 channels\n", name(), c->size()));
 	}
 
 	seek (_session.transport_frame());

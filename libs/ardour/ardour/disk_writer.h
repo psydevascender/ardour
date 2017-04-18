@@ -38,19 +38,22 @@ class LIBARDOUR_API DiskWriter : public DiskIOProcessor
   public:
 	DiskWriter (Session&, std::string const & name, DiskIOProcessor::Flag f = DiskIOProcessor::Flag (0));
 
-	virtual bool set_write_source_name (const std::string& str);
+	bool set_name (std::string const & str);
 
-	bool           recordable()  const { return _flags & Recordable; }
+	bool set_write_source_name (const std::string& str);
+
+	bool recordable()  const { return _flags & Recordable; }
 
 	static framecnt_t chunk_frames() { return _chunk_frames; }
 	static framecnt_t default_chunk_frames ();
 	static void set_chunk_frames (framecnt_t n) { _chunk_frames = n; }
 
 	void run (BufferSet& /*bufs*/, framepos_t /*start_frame*/, framepos_t /*end_frame*/, double speed, pframes_t /*nframes*/, bool /*result_required*/);
+	bool configure_io (ChanCount in, ChanCount out);
 	void non_realtime_locate (framepos_t);
 	void realtime_handle_transport_stopped ();
 
-	virtual XMLNode& state (bool full);
+	XMLNode& state (bool full);
 	int set_state (const XMLNode&, int version);
 
 	std::string write_source_name () const {
@@ -72,7 +75,7 @@ class LIBARDOUR_API DiskWriter : public DiskIOProcessor
 
 	boost::shared_ptr<SMFSource> midi_write_source () { return _midi_write_source; }
 
-	virtual std::string steal_write_source_name () { return std::string(); }
+	std::string steal_write_source_name () { return std::string(); }
 	int use_new_write_source (DataType, uint32_t n = 0);
 	void reset_write_sources (bool, bool force = false);
 
@@ -90,8 +93,8 @@ class LIBARDOUR_API DiskWriter : public DiskIOProcessor
 
 	bool         record_enabled() const { return g_atomic_int_get (const_cast<gint*>(&_record_enabled)); }
 	bool         record_safe () const { return g_atomic_int_get (const_cast<gint*>(&_record_safe)); }
-	virtual void set_record_enabled (bool yn);
-	virtual void set_record_safe (bool yn);
+	void set_record_enabled (bool yn);
+	void set_record_safe (bool yn);
 
 	bool destructive() const { return _flags & Destructive; }
 	int set_destructive (bool yn);
@@ -106,11 +109,11 @@ class LIBARDOUR_API DiskWriter : public DiskIOProcessor
 
 	float buffer_load() const;
 
-	virtual void request_input_monitoring (bool) {}
-	virtual void ensure_input_monitoring (bool) {}
+	void request_input_monitoring (bool) {}
+	void ensure_input_monitoring (bool) {}
 
 	framecnt_t   capture_offset() const { return _capture_offset; }
-	virtual void set_capture_offset ();
+	void set_capture_offset ();
 
 	int seek (framepos_t frame, bool complete_refill);
 

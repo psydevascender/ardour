@@ -1069,7 +1069,7 @@ DiskWriter::reset_write_sources (bool mark_write_complete, bool /*force*/)
 
 		} else {
 
-			if ((*chan)->write_source == 0) {
+			if (!(*chan)->write_source) {
 				use_new_write_source (DataType::AUDIO, n);
 			}
 		}
@@ -1707,4 +1707,33 @@ void
 DiskWriter::realtime_handle_transport_stopped ()
 {
 	realtime_speed_change ();
+}
+
+bool
+DiskWriter::configure_io (ChanCount in, ChanCount out)
+{
+	if (!DiskIOProcessor::configure_io (in, out)) {
+		return false;
+	}
+
+	try {
+		reset_write_sources (false);
+	} catch (...) {
+		return false;
+	}
+
+	return true;
+}
+
+bool
+DiskWriter::set_name (string const & str)
+{
+	string my_name = X_("writer:");
+	my_name += str;
+
+	if (_name != my_name) {
+		SessionObject::set_name (my_name);
+	}
+
+	return true;
 }
