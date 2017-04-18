@@ -538,7 +538,9 @@ DiskWriter::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame,
 				capture_start_frame = loop_start;
 			}
 
-			_midi_write_source->mark_write_starting_now (capture_start_frame, capture_captured, loop_length);
+			if (_midi_write_source) {
+				_midi_write_source->mark_write_starting_now (capture_start_frame, capture_captured, loop_length);
+			}
 
 			g_atomic_int_set(const_cast<gint*> (&_frames_pending_write), 0);
 			g_atomic_int_set(const_cast<gint*> (&_num_captured_loops), 0);
@@ -565,111 +567,117 @@ DiskWriter::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame,
 
 	if (rec_nframes) {
 
-		/* AUDIO */
+		if (_playlists[DataType::AUDIO]) {
 
-		const size_t n_buffers = bufs.count().n_audio();
+			/* AUDIO */
 
-		for (n = 0; chan != c->end(); ++chan, ++n) {
+			const size_t n_buffers = bufs.count().n_audio();
 
-			ChannelInfo* chaninfo (*chan);
-			AudioBuffer& buf (bufs.get_audio (n%n_buffers));
+			for (n = 0, chan = c->begin(); chan != c->end(); ++chan, ++n) {
 
-			chaninfo->buf->get_write_vector (&chaninfo->rw_vector);
+				ChannelInfo* chaninfo (*chan);
+				AudioBuffer& buf (bufs.get_audio (n%n_buffers));
 
-			if (rec_nframes <= (framecnt_t) chaninfo->rw_vector.len[0]) {
+				chaninfo->buf->get_write_vector (&chaninfo->rw_vector);
 
-				Sample *incoming = buf.data (rec_offset);
-				memcpy (chaninfo->rw_vector.buf[0], incoming, sizeof (Sample) * rec_nframes);
+				if (rec_nframes <= (framecnt_t) chaninfo->rw_vector.len[0]) {
 
-			} else {
+					Sample *incoming = buf.data (rec_offset);
+					memcpy (chaninfo->rw_vector.buf[0], incoming, sizeof (Sample) * rec_nframes);
 
-				framecnt_t total = chaninfo->rw_vector.len[0] + chaninfo->rw_vector.len[1];
+				} else {
 
-				if (rec_nframes > total) {
-                                        DEBUG_TRACE (DEBUG::Butler, string_compose ("%1 overrun in %2, rec_nframes = %3 total space = %4\n",
-                                                                                    DEBUG_THREAD_SELF, name(), rec_nframes, total));
-                                        Overrun ();
-					return;
+					framecnt_t total = chaninfo->rw_vector.len[0] + chaninfo->rw_vector.len[1];
+
+					if (rec_nframes > total) {
+						DEBUG_TRACE (DEBUG::Butler, string_compose ("%1 overrun in %2, rec_nframes = %3 total space = %4\n",
+						                                            DEBUG_THREAD_SELF, name(), rec_nframes, total));
+						Overrun ();
+						return;
+					}
+
+					Sample *incoming = buf.data (rec_offset);
+					framecnt_t first = chaninfo->rw_vector.len[0];
+
+					memcpy (chaninfo->rw_vector.buf[0], incoming, sizeof (Sample) * first);
+					memcpy (chaninfo->rw_vector.buf[1], incoming + first, sizeof (Sample) * (rec_nframes - first));
 				}
 
-				Sample *incoming = buf.data (rec_offset);
-				framecnt_t first = chaninfo->rw_vector.len[0];
+				chaninfo->buf->increment_write_ptr (rec_nframes);
 
-				memcpy (chaninfo->rw_vector.buf[0], incoming, sizeof (Sample) * first);
-				memcpy (chaninfo->rw_vector.buf[1], incoming + first, sizeof (Sample) * (rec_nframes - first));
 			}
 
-			chaninfo->buf->increment_write_ptr (rec_nframes);
+			/* MIDI */
 
-		}
+			if (_playlists[DataType::MIDI]) {
 
-		/* MIDI */
-
-		// Pump entire port buffer into the ring buffer (TODO: split cycles?)
-		MidiBuffer& buf    = bufs.get_midi (0);
-		boost::shared_ptr<MidiTrack> mt = boost::dynamic_pointer_cast<MidiTrack>(_route);
-		MidiChannelFilter* filter = mt ? &mt->capture_filter() : 0;
-
-		for (MidiBuffer::iterator i = buf.begin(); i != buf.end(); ++i) {
-			Evoral::Event<MidiBuffer::TimeType> ev(*i, false);
-			if (ev.time() + rec_offset > rec_nframes) {
-				break;
-			}
-#ifndef NDEBUG
-			if (DEBUG_ENABLED(DEBUG::MidiIO)) {
-				const uint8_t* __data = ev.buffer();
-				DEBUG_STR_DECL(a);
-				DEBUG_STR_APPEND(a, string_compose ("mididiskstream %1 capture event @ %2 + %3 sz %4 ", this, ev.time(), start_frame, ev.size()));
-				for (size_t i=0; i < ev.size(); ++i) {
-					DEBUG_STR_APPEND(a,hex);
-					DEBUG_STR_APPEND(a,"0x");
-					DEBUG_STR_APPEND(a,(int)__data[i]);
-					DEBUG_STR_APPEND(a,' ');
-				}
-				DEBUG_STR_APPEND(a,'\n');
-				DEBUG_TRACE (DEBUG::MidiIO, DEBUG_STR(a).str());
-			}
-#endif
-			/* Write events to the capture buffer in frames from session start,
-			   but ignoring looping so event time progresses monotonically.
-			   The source knows the loop length so it knows exactly where the
-			   event occurs in the series of recorded loops and can implement
-			   any desirable behaviour.  We don't want to send event with
-			   transport time here since that way the source can not
-			   reconstruct their actual time; future clever MIDI looping should
-			   probably be implemented in the source instead of here.
-			*/
-			const framecnt_t loop_offset = _num_captured_loops * loop_length;
-			const framepos_t event_time = start_frame + loop_offset - _accumulated_capture_offset + ev.time();
-			if (event_time < 0 || event_time < first_recordable_frame) {
-				/* Event out of range, skip */
-				continue;
-			}
-
-			if (!filter || !filter->filter(ev.buffer(), ev.size())) {
-				_midi_buf->write (event_time, ev.event_type(), ev.size(), ev.buffer());
-			}
-		}
-		g_atomic_int_add(const_cast<gint*>(&_frames_pending_write), nframes);
-
-		if (buf.size() != 0) {
-			Glib::Threads::Mutex::Lock lm (_gui_feed_buffer_mutex, Glib::Threads::TRY_LOCK);
-
-			if (lm.locked ()) {
-				/* Copy this data into our GUI feed buffer and tell the GUI
-				   that it can read it if it likes.
-				*/
-				_gui_feed_buffer.clear ();
+				// Pump entire port buffer into the ring buffer (TODO: split cycles?)
+				MidiBuffer& buf    = bufs.get_midi (0);
+				boost::shared_ptr<MidiTrack> mt = boost::dynamic_pointer_cast<MidiTrack>(_route);
+				MidiChannelFilter* filter = mt ? &mt->capture_filter() : 0;
 
 				for (MidiBuffer::iterator i = buf.begin(); i != buf.end(); ++i) {
-					/* This may fail if buf is larger than _gui_feed_buffer, but it's not really
-					   the end of the world if it does.
+					Evoral::Event<MidiBuffer::TimeType> ev(*i, false);
+					if (ev.time() + rec_offset > rec_nframes) {
+						break;
+					}
+#ifndef NDEBUG
+					if (DEBUG_ENABLED(DEBUG::MidiIO)) {
+						const uint8_t* __data = ev.buffer();
+						DEBUG_STR_DECL(a);
+						DEBUG_STR_APPEND(a, string_compose ("mididiskstream %1 capture event @ %2 + %3 sz %4 ", this, ev.time(), start_frame, ev.size()));
+						for (size_t i=0; i < ev.size(); ++i) {
+							DEBUG_STR_APPEND(a,hex);
+							DEBUG_STR_APPEND(a,"0x");
+							DEBUG_STR_APPEND(a,(int)__data[i]);
+							DEBUG_STR_APPEND(a,' ');
+						}
+						DEBUG_STR_APPEND(a,'\n');
+						DEBUG_TRACE (DEBUG::MidiIO, DEBUG_STR(a).str());
+					}
+#endif
+					/* Write events to the capture buffer in frames from session start,
+					   but ignoring looping so event time progresses monotonically.
+					   The source knows the loop length so it knows exactly where the
+					   event occurs in the series of recorded loops and can implement
+					   any desirable behaviour.  We don't want to send event with
+					   transport time here since that way the source can not
+					   reconstruct their actual time; future clever MIDI looping should
+					   probably be implemented in the source instead of here.
 					*/
-					_gui_feed_buffer.push_back ((*i).time() + start_frame, (*i).size(), (*i).buffer());
+					const framecnt_t loop_offset = _num_captured_loops * loop_length;
+					const framepos_t event_time = start_frame + loop_offset - _accumulated_capture_offset + ev.time();
+					if (event_time < 0 || event_time < first_recordable_frame) {
+						/* Event out of range, skip */
+						continue;
+					}
+
+					if (!filter || !filter->filter(ev.buffer(), ev.size())) {
+						_midi_buf->write (event_time, ev.event_type(), ev.size(), ev.buffer());
+					}
+				}
+				g_atomic_int_add(const_cast<gint*>(&_frames_pending_write), nframes);
+
+				if (buf.size() != 0) {
+					Glib::Threads::Mutex::Lock lm (_gui_feed_buffer_mutex, Glib::Threads::TRY_LOCK);
+
+					if (lm.locked ()) {
+						/* Copy this data into our GUI feed buffer and tell the GUI
+						   that it can read it if it likes.
+						*/
+						_gui_feed_buffer.clear ();
+
+						for (MidiBuffer::iterator i = buf.begin(); i != buf.end(); ++i) {
+							/* This may fail if buf is larger than _gui_feed_buffer, but it's not really
+							   the end of the world if it does.
+							*/
+							_gui_feed_buffer.push_back ((*i).time() + start_frame, (*i).size(), (*i).buffer());
+						}
+					}
+
+					DataRecorded (_midi_write_source); /* EMIT SIGNAL */
 				}
 			}
-
-			DataRecorded (_midi_write_source); /* EMIT SIGNAL */
 		}
 
 		capture_captured += rec_nframes;
