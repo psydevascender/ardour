@@ -259,15 +259,6 @@ DiskIOProcessor::add_channel_to (boost::shared_ptr<ChannelList> c, uint32_t how_
 }
 
 int
-DiskIOProcessor::add_channel (uint32_t how_many)
-{
-	RCUWriter<ChannelList> writer (channels);
-	boost::shared_ptr<ChannelList> c = writer.get_copy();
-
-	return add_channel_to (c, how_many);
-}
-
-int
 DiskIOProcessor::remove_channel_from (boost::shared_ptr<ChannelList> c, uint32_t how_many)
 {
 	while (how_many-- && !c->empty()) {
@@ -277,15 +268,6 @@ DiskIOProcessor::remove_channel_from (boost::shared_ptr<ChannelList> c, uint32_t
 	}
 
 	return 0;
-}
-
-int
-DiskIOProcessor::remove_channel (uint32_t how_many)
-{
-	RCUWriter<ChannelList> writer (channels);
-	boost::shared_ptr<ChannelList> c = writer.get_copy();
-
-	return remove_channel_from (c, how_many);
 }
 
 void

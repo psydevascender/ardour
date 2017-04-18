@@ -97,9 +97,6 @@ class LIBARDOUR_API DiskIOProcessor : public Processor
 
 	int set_state (const XMLNode&, int version);
 
-	int add_channel (uint32_t how_many);
-	int remove_channel (uint32_t how_many);
-
 	bool need_butler() const { return _need_butler; }
 
 	boost::shared_ptr<Playlist>      get_playlist (DataType dt) const { return _playlists[dt]; }
