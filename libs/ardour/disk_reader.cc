@@ -868,7 +868,7 @@ DiskReader::refill_audio (Sample* mixdown_buffer, float* gain_buffer, framecnt_t
 	*/
 
 	DEBUG_TRACE (DEBUG::DiskIO, string_compose ("%1: space to refill %2 vs. chunk %3 (speed = %4)\n", name(), total_space, _chunk_frames, _session.transport_speed()));
-	if ((total_space < _chunk_frames) && fabs (_session.transport_speed()) < 2.0f) {
+	if ((total_space < _chunk_frames) && !_session.transport_stopped() && fabs (_session.transport_speed()) < 2.0f) {
 		return 0;
 	}
 
