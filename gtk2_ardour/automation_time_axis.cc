@@ -1050,3 +1050,10 @@ AutomationTimeAxisView::color () const
 {
 	return gdk_color_from_rgb (_route->presentation_info().color());
 }
+
+boost::shared_ptr<PBD::Controllable>
+AutomationTimeAxisView::controllable() const
+{
+	return _control;
+}
+
